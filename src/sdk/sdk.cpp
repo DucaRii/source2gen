@@ -10,7 +10,8 @@ namespace {
     using namespace std::string_view_literals;
 
     constexpr std::string_view kOutDirName = "sdk"sv;
-    constinit std::array include_paths = {"<cstdint>"sv, "\"!GlobalTypes.hpp\""sv};
+    constinit std::array std_include_paths = {"<cstdint>"sv};
+    constinit std::array sdk_include_paths = {"\"!GlobalTypes.hpp\""sv};
 
     constexpr uint32_t kMaxReferencesForClassEmbed = 2;
     constexpr size_t kMinFieldCountForClassEmbed = 2;
@@ -198,7 +199,7 @@ namespace sdk {
                         type_storage = "uint64_t";
                         break;
                     default:
-                        type_storage = "INVALID_TYPE";
+                        type_storage = "";
                     }
 
                     return type_storage;
@@ -212,9 +213,14 @@ namespace sdk {
                 //
                 PrintEnumInfo(builder, schema_enum_binding);
 
+                // determine the type of the enum
+                const auto type_name = get_type_name();
+                if (type_name.empty())
+                    continue;
+
                 // @note: @es3n1n: begin enum class
                 //
-                builder.begin_enum_class(schema_enum_binding->m_pszName, get_type_name());
+                builder.begin_enum_class(schema_enum_binding->m_pszName, type_name);
 
                 // @note: @es3n1n: assemble enum items
                 //
@@ -230,7 +236,12 @@ namespace sdk {
                             builder.comment(std::format("{} \"{}\"", field_metadata.m_szName, data));
                     }
 
-                    builder.enum_item(field.m_szName, field.m_Uint == std::numeric_limits<std::size_t>::max() ? -1 : field.m_Uint);
+                    // clamp value to the enum type maximum
+                    auto val = field.m_Uint == std::numeric_limits<std::size_t>::max() ? -1 : field.m_Uint;
+                    const uint64_t max_val = std::pow(2, schema_enum_binding->m_nAlingOf * 8) - 1;
+                    val = std::clamp(val, 0ull, max_val);
+
+                    builder.enum_item(field.m_szName, val);
                 }
 
                 // @note: @es3n1n: we are done with this enum
@@ -617,7 +628,7 @@ namespace sdk {
 
                 // @note: @es3n1n: dump static fields
                 //
-                if (class_info->m_nStaticFieldsSize) {
+                /*if (class_info->m_nStaticFieldsSize) {
                     if (class_info->m_nFieldSize)
                         builder.next_line();
                     builder.comment("Static fields:");
@@ -629,7 +640,7 @@ namespace sdk {
                     auto [type, mod] = get_type(static_field->m_pSchemaType);
                     const auto var_info = field_parser::parse(type, static_field->m_pszName, mod);
                     builder.static_field_getter(var_info.m_type, var_info.m_name, current->BGetScopeName().data(), class_info->m_pszName, s);
-                }
+                }*/
 
                 if (class_info->m_pFieldMetadataOverrides && class_info->m_pFieldMetadataOverrides->m_iTypeDescriptionCount > 1) {
                     const auto& dm = class_info->m_pFieldMetadataOverrides;
@@ -704,8 +715,13 @@ namespace sdk {
 
         // @note: @es3n1n: include files
         //
-        for (auto&& include_path : include_paths)
+        for (auto&& include_path : std_include_paths)
             builder.include(include_path.data());
+
+        if (scope_name.compare("!GlobalTypes") != 0) {
+            for (auto&& include_path : sdk_include_paths)
+                builder.include(include_path.data());
+        }
 
         // @note: @es3n1n: get stuff from schema that we'll use later
         //
