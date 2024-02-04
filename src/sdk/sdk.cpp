@@ -583,7 +583,7 @@ namespace sdk {
                             if (prop_class->used_count_ <= kMaxReferencesForClassEmbed) {
                                 for (const auto& [cached_field_name, cached_field_offset] : prop_class->cached_fields_) {
                                     const auto accumulated_offset = cached_field_offset + field.m_nSingleInheritanceOffset;
-                                    builder.comment(std::format("-> {} - {:#x}", cached_field_name, accumulated_offset));
+                                    builder.comment(std::format("-> {}.{} - {:#x}", var_info.formatted_name(), cached_field_name, accumulated_offset));
                                 }
                             }
                         }
