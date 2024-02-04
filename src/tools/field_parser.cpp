@@ -208,9 +208,8 @@ namespace field_parser {
                     }
                 }
             
-                auto reconstructed_type = result.m_template_info.to_string();
-                if (result.m_type != reconstructed_type)
-                    std::cout << reconstructed_type << std::endl;
+                // reconstruct type string with our template info so we can fix cpp types
+                result.m_type = result.m_template_info.to_string();
             }
         }
 
