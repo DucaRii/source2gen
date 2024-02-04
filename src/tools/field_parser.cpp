@@ -115,6 +115,9 @@ namespace field_parser {
                 result.m_type = rule.second;
                 break;
             }
+
+            // remove all spaces from the type names (only affects templated types)
+            result.m_type.erase(std::remove_if(result.m_type.begin(), result.m_type.end(), [](auto c) { return std::isspace(c); }), result.m_type.end());
         }
 
         // @note: @og: as above just modified for datamaps
