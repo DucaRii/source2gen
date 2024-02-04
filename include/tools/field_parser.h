@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 
 enum class fieldtype_t : uint8_t;
 
@@ -17,6 +18,35 @@ namespace field_parser {
         // array sizes, for example {13, 37} for multi demensional array "[13][37]"
         std::vector<std::size_t> m_array_sizes = {};
 
+        // template type, either a list of types (for ones with multiple eg. <uint16_t,int16_t>) or just one type
+        struct template_info_t {
+            std::string type_name = "";
+            std::vector<std::variant<template_info_t, std::string>> template_types = {};
+            bool is_pointer = false;
+
+            std::string to_string() const {
+                auto str = type_name;
+                str += '<';
+                for (auto i = 0; i < template_types.size(); i++) {
+                    if (i > 0)
+                        str += ',';
+
+                    auto& template_type = template_types[i];
+                    if (std::holds_alternative<field_info_t::template_info_t>(template_type)) {
+                        str += std::get<field_info_t::template_info_t>(template_type).to_string();
+                    } else if (std::holds_alternative<std::string>(template_type)) {
+                        str += std::get<std::string>(template_type);
+                    }
+                }
+                str += '>';
+
+                if (is_pointer)
+                    str += '*';
+
+                return str;
+            }
+        } m_template_info = {};
+
         std::size_t m_bitfield_size = 0ull; // bitfield size, set to 0 if var isn't a bitfield
     public:
         __forceinline bool is_bitfield() const {
@@ -25,6 +55,10 @@ namespace field_parser {
 
         __forceinline bool is_array() const {
             return !m_array_sizes.empty();
+        }
+
+        __forceinline bool is_templated() const {
+            return m_type.contains('<') && m_type.contains('>');
         }
     public:
         std::size_t total_array_size() const {

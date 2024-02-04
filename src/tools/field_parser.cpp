@@ -107,6 +107,9 @@ namespace field_parser {
             if (result.m_type.empty())
                 result.m_type = type_name;
 
+            // remove all spaces from the type names (only affects templated types)
+            result.m_type.erase(std::remove_if(result.m_type.begin(), result.m_type.end(), [](auto c) { return std::isspace(c); }), result.m_type.end());
+
             // @note: @es3n1n: applying kTypeNameToCpp rules
             for (auto& rule : kTypeNameToCpp) {
                 if (result.m_type != rule.first)
@@ -116,8 +119,99 @@ namespace field_parser {
                 break;
             }
 
-            // remove all spaces from the type names (only affects templated types)
-            result.m_type.erase(std::remove_if(result.m_type.begin(), result.m_type.end(), [](auto c) { return std::isspace(c); }), result.m_type.end());
+            // if this is a templated type, the above check for cpp names wont work, so we have to do it separately
+            if (result.is_templated()) {
+                // parse template types
+
+                // add base template
+                result.m_template_info.type_name = result.m_type.substr(0, result.m_type.find_first_of('<'));
+                result.m_template_info.is_pointer = result.m_type.back() == '*';
+
+                auto template_types = result.m_type.substr(result.m_type.find_first_of('<') + 1);
+
+                // tokenize template types by splitting them up with ',' separator
+                auto template_tokens = std::vector<std::string>{};
+                while (template_types.size() > 1) {
+                    // is this a template within a template? e.g. CUtlVector<CUtlPair<CAnimParamHandle,CAnimVariant>>
+                    if (template_types.contains('<')) {
+                        template_tokens.push_back(template_types.substr(0, template_types.find('>')));
+
+                        // add a '*' at the start of the string to indicate this template is a pointer
+                        if (template_types[template_types.find('>') + 1] == '*')
+                            template_tokens.back().insert(0, "*");
+
+                        template_types = template_types.substr(template_types.find('>') + 2);
+
+                        continue;
+                    }
+
+                    // found a separator, store the substring
+                    if (template_types.contains(',')) {
+                        template_tokens.push_back(template_types.substr(0, template_types.find(',')));
+                        template_types = template_types.substr(template_types.find(',') + 1);
+                        continue;
+                    }
+
+                    // are we at the end of this template? add the rest of the string
+                    if (template_types.contains('>')) {
+                        template_tokens.push_back(template_types.substr(0, template_types.find('>')));
+                        template_types = template_types.substr(template_types.find('>') + 1);
+                        continue;
+                    }
+
+                    break;
+                }
+
+                for (auto& template_token : template_tokens) {
+                    auto template_info = &result.m_template_info;
+
+                    // is this a template within a template?
+                    if (template_token.contains('<')) {
+                        result.m_template_info.template_types.push_back(field_info_t::template_info_t{});
+                        template_info = &std::get<field_info_t::template_info_t>(result.m_template_info.template_types.back());
+
+                        if (template_token[0] == '*') {
+                            template_info->is_pointer = true;
+                            template_token = template_token.substr(1);
+                        }
+
+                        template_info->type_name = template_token.substr(0, template_token.find('<'));
+
+                        template_token = template_token.substr(template_token.find('<') + 1);
+                    }
+
+                    // are there multiple types in this bracket?
+                    while (template_token.contains(',')) {
+                        template_info->template_types.push_back(template_token.substr(0, template_token.find(',')));
+                        template_token = template_token.substr(template_token.find(',') + 1);
+                    }
+
+                    template_info->template_types.push_back(template_token);
+
+                    // go through all types and replace them with proper cpp types if necessary
+                    for ( auto& type : template_info->template_types )
+                    {
+                        if (!std::holds_alternative<std::string>(type))
+                            continue;
+
+                        auto type_string = std::get<std::string>(type);
+
+                        for (auto& rule : kTypeNameToCpp) {
+                            if (type_string != rule.first)
+                                continue;
+
+                            type_string = rule.second;
+                            break;
+                        }
+
+                        type = type_string;
+                    }
+                }
+            
+                auto reconstructed_type = result.m_template_info.to_string();
+                if (result.m_type != reconstructed_type)
+                    std::cout << reconstructed_type << std::endl;
+            }
         }
 
         // @note: @og: as above just modified for datamaps
